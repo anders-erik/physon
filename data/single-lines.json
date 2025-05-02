@@ -1,0 +1,32 @@
+// Valid JSON values (these should be accepted individually)
+
+null
+true
+false
+
+0
+-123.456e+78
+1.0e-10
+
+""
+"simple text"
+"unicode \u1234 and escaped quote: \""
+
+[]
+[1, "two", null, [3, 4], {"five": 5}]
+
+{}
+{"key":"value"}
+{"nested":{"inner":[1,2,3],"bool":true}}
+
+
+// Invalid JSON examples (should be rejected)
+
+[1, 2, 3,]                 // trailing comma
+{key: "value"}             // unquoted key
+{'a': 1}                   // single quotes
+NaN                        // not a valid JSON value
+Infinity                   // also invalid
+// comment                 // comments are not allowed
+0x1A                       // hex numbers are invalid
+

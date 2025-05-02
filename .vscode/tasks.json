@@ -1,0 +1,62 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "run physon",
+			"type": "cppbuild",
+			"command": "./build/physon",
+			"args": [
+				"data/simple.json"
+			],
+			"dependsOn": [
+				"build physon"
+			],
+
+		},
+		{
+			"label": "build physon",
+			"type": "cppbuild",
+			"command": "/usr/bin/g++",
+			"args": [
+				"-fdiagnostics-color=always",
+				"-Wall",
+				"-g",
+				"main.cc",
+				"-o",
+				"build/physon",
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/g++"
+		},
+		{
+			"label": "build_c_simple_example",
+			"type": "cppbuild",
+			"command": "/usr/bin/gcc",
+			"args": [
+				"-fdiagnostics-color=always",
+				"-Wall",
+				"-g",
+				"c_simple_example.c",
+				"-o",
+				"build/c_simple_example",
+				"-I./ref/include/c_simple/",
+				// "-L./references/lib/",
+				"./ref/lib/c_simple.o",
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/gcc"
+		}
+	]
+}
