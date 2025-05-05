@@ -1,16 +1,37 @@
+#include <string>
 #include "physon.hh"
+
+
+std::string load_file(std::string path) {
+
+    std::ifstream file(path); // Open the file
+    if (!file.is_open()) {
+        std::cerr << "Failed to open the file: " << path << std::endl;
+        throw std::runtime_error("Failed to open the file");
+    }
+
+    // Read file content into a string
+    std::string file_contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    file.close();
+
+
+    return file_contents;
+}
+
 
 
 int main (int argc, char **argv) {
 
     std::cout << "Hello, Physon!" << std::endl;
 
-    Physon physon;
+    // std::string json_string = load_file("data/null.json");
+    // std::string json_string = load_file("data/true.json");
+    // std::string json_string = load_file("data/false.json");
+    std::string json_string = load_file("data/name_literals_array.json");
+    // std::string json_string = load_file("data/penpaper.json");
 
-    // physon.load_file("data/true.json");
-    // physon.load_file("data/false.json");
-    physon.load_file("data/null.json");
-    // physon.load_file("data/penpaper.json");
+    Physon physon (json_string);
 
     physon.parse();
 

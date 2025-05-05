@@ -1,114 +1,50 @@
+#pragma once
 
 #include <vector>
 #include <iostream>
 #include <fstream>
 #include <string>
 
+#include "physon_types.hh"
+
 
 #define log(x) std::cout << x << std::endl;
 
 
-enum class value_type {
-    STRING = 0,
-    NUMBER,
-    OBJECT,
-    ARRAY,
-    TRUE,
-    FALSE,
-    NULL_,
-};
-
-enum class token_type {
-
-    STRING =0,
-    NUMBER,
-    TRUE,
-    FALSE,
-    NULL_,
-
-    LEFT_SQUARE,
-    RIGHT_SQUARE,
-    LEFT_CURLY,
-    RIGHT_CURLY,
-    COLON,
-    COMMA,
-};
-
-struct Token {
-    // int id;
-    token_type type;
-    int str_start_i;
-    int str_length;
-
-    Token(token_type type, int str_start_i, int str_length) 
-        : type(type), str_start_i(str_start_i), str_length(str_length) {}
-};
-
-enum class parse_state {
-    ROOT, // Looking for the root value
-    ARRAY_START,
-    ARRAY_END,
-    ARRAY_NEW_VALUE,
-};
-
-struct json_value {
-    int id;
-    value_type type;
-
-    int str_start_i;
-    int str_end_i;
-    std::string str_value;
-};
-
-struct Cursor {
-    size_t index = 0;
-};
 
 struct Physon {
-    std::string path;
     std::string content;
 
+    json_store store; // store for all json data
+    
+    json_element root_container; // the first element encountered in file
+
+    ParserCursor cursor;  // source string cursor
     std::vector<Token> tokens;
 
-    Cursor cursor;
+    
+    Physon(std::string json_str) : content {json_str} {}; 
 
-    json_value root_value; // the first value encountered in file. Literal or container.
-
-    parse_state state = parse_state::ROOT; // Keeps track of the current parsing state
-
-    void load_file(std::string path); 
     void print_string();
     
     void parse();                   // parse the content
     void print_tokens();
 
-    void parse_true_literal();
-    void parse_false_literal();
-    void parse_null_literal();
+    json_value try_parse_element();
+
+    json_value parse_true_literal();
+    json_value parse_false_literal();
+    json_value parse_null_literal();
 
     bool is_new_literal_char();
     bool is_new_container_char();
     bool is_whitespace(char ch);
+    bool is_literal(json_value_type type);
+    bool is_container(json_value_type type);
     void gobble_ws();               // progress index while pointing to whitespace
 };
 
-void Physon::load_file(std::string path) {
 
-    this->path = path;
-
-    std::ifstream file(path); // Open the file
-    if (!file.is_open()) {
-        std::cerr << "Failed to open the file: " << path << std::endl;
-        throw std::runtime_error("Failed to open the file");
-    }
-
-    // Read file content into a string
-    std::string file_contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-
-    file.close();
-
-    content = file_contents;
-}
 
 void Physon::print_string() {
     std::cout << "JSON String: " << std::endl 
@@ -121,21 +57,72 @@ void Physon::print_string() {
 void Physon::parse() {
     
     cursor.index = 0;
+    // Indicates that the root value is a literal
+    root_container.value.type = json_value_type::NULL_;
+
+    // grab root element
+    json_value new_value = try_parse_element();
+
+    // if root element is a literal type, then make sure no other elements are present
+    if(is_literal(new_value.type)){
+
+        if(cursor.index != content.size())
+            throw std::runtime_error("Invalid JSON: Extra characters after root literal at index " + std::to_string(cursor.index));
+
+        return;
+    }
+
+    // As we now know that the root element is a container
+    root_container.value = new_value;
+    cursor.current_container.value = new_value;
+
 
     while(cursor.index < content.size()){
 
-        // Parse literals
-        if(content[cursor.index] == 't')
-            parse_true_literal();
-        else if(content[cursor.index] == 'f')
-            parse_false_literal();
-        else if(content[cursor.index] == 'n')
-            parse_null_literal();
+        // Need to make sure that we are at a value-parsable state
+        new_value = try_parse_element();
+
+
+        if(cursor.current_container.value.type == json_value_type::ARRAY){
+
+            if(is_literal(new_value.type)){
+                json_array & array = store.get_array(cursor.current_container.value.store_id);
+                array.push_back(new_value);
+                cursor.current_element.value = new_value;
+            }
+            else if(is_container(new_value.type)){
+
+            }
+
+            if(content[cursor.index] == ','){
+                log("Comma at " << cursor.index);
+                cursor.index++;
+                continue;
+            }
+            
+
+            if(content[cursor.index] == ']'){
+                log("End of array at " << cursor.index);
+                cursor.index++;
+
+                if(cursor.current_container == root_container){
+                    return; 
+                }
+                
+                // go to parent
+
+            }
+
+        }
+
+        if(new_value.type == json_value_type::NULL_){
+            
+        }
         
         // Parse containers
 
 
-        gobble_ws();
+        // gobble_ws();
     }
 
 }
@@ -149,8 +136,57 @@ void Physon::print_tokens() {
     }
 }
 
+bool Physon::is_literal(json_value_type type){
+    return  type == json_value_type::NULL_ ||
+            type == json_value_type::TRUE ||
+            type == json_value_type::FALSE ||
+            type == json_value_type::NUMBER ||
+            type == json_value_type::STRING;
+}
+bool Physon::is_container(json_value_type type){
+    return  type == json_value_type::ARRAY ||
+            type == json_value_type::OBJECT;
+}
 
-void Physon::parse_true_literal(){
+json_value Physon::try_parse_element(){
+
+    gobble_ws();
+
+    json_value new_value;
+
+    // LITERALS
+    if(content[cursor.index] == 't'){
+        new_value = parse_true_literal();
+    }
+    else if(content[cursor.index] == 'f'){
+        new_value = parse_false_literal();
+    }
+    else if(content[cursor.index] == 'n'){
+        new_value = parse_null_literal();
+    }
+    
+    // CONTAINERS
+    else if(content[cursor.index] == '['){
+        int new_array_id = store.add_array();
+        new_value.type = json_value_type::ARRAY;
+        new_value.store_id = new_array_id;
+        cursor.index++;
+    }
+    else if(content[cursor.index] == '{'){
+        // new_value.type = json_value_type::OBJECT;
+        // new_value.type_id = 0;
+        // cursor.index++;
+    }
+    else {
+        throw std::runtime_error("Invalid JSON: Unexpected first char in new value. Occured at index " + std::to_string(cursor.index));
+    }
+
+    gobble_ws();
+
+    return new_value;
+};
+
+json_value Physon::parse_true_literal(){
 
     bool is_true_literal = (content[cursor.index + 1] == 'r' && content[cursor.index + 2] == 'u' && content[cursor.index + 3] == 'e');
     if(!is_true_literal)
@@ -160,9 +196,15 @@ void Physon::parse_true_literal(){
 
     tokens.emplace_back(token_type::TRUE, cursor.index, 4);
     cursor.index += 4;
+
+    json_value new_value;
+    new_value.type = json_value_type::TRUE;
+    new_value.store_id = 0;
+
+    return new_value;
 };
 
-void Physon::parse_false_literal(){
+json_value Physon::parse_false_literal(){
 
     bool is_false_literal = (content[cursor.index + 1] == 'a' && content[cursor.index + 2] == 'l' && content[cursor.index + 3] == 's' && content[cursor.index + 4] == 'e');
     if(!is_false_literal)
@@ -172,9 +214,14 @@ void Physon::parse_false_literal(){
 
     tokens.emplace_back(token_type::FALSE, cursor.index, 5);
     cursor.index += 5;
+
+    json_value new_value;
+    new_value.type = json_value_type::FALSE;
+    new_value.store_id = 0;
+    return new_value;
 };
 
-void Physon::parse_null_literal(){
+json_value Physon::parse_null_literal(){
 
     bool is_null_literal = (content[cursor.index + 1] == 'u' && content[cursor.index + 2] == 'l' && content[cursor.index + 3] == 'l');
     if(!is_null_literal)
@@ -184,6 +231,11 @@ void Physon::parse_null_literal(){
 
     tokens.emplace_back(token_type::NULL_, cursor.index, 4);
     cursor.index += 4;
+
+    json_value new_value;
+    new_value.type = json_value_type::NULL_;
+    new_value.store_id = 0;
+    return new_value;
 };
 
 

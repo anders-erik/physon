@@ -49,14 +49,30 @@
 				// "-L./references/lib/",
 				"./ref/lib/c_simple.o",
 			],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
 			"problemMatcher": [
 				"$gcc"
 			],
 			"group": "build",
 			"detail": "compiler: /usr/bin/gcc"
+		},
+		{
+			"label": "build_nlohmann_main",
+			"type": "cppbuild",
+			"command": "/usr/bin/g++",
+			"args": [
+				"-fdiagnostics-color=always",
+				"-Wall",
+				"-g",
+				"main_nlohmann.cc",
+				"-o",
+				"build/main_nlohmann",
+				"-I./ref/include",
+			],
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/g++"
 		}
 	]
 }

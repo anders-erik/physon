@@ -57,6 +57,29 @@ def build_c_simple_json_parser():
     # build object file
     subprocess.run(["gcc", "-c", c_simple_c_file, "-o", c_simple_lib_file], check=True)
 
+def fetch_nlohmann_json():
+    nlohmann_dir = os.path.join(references_dir, "nlohmann_json")
 
-fetch_c_simple_json_parser()
-build_c_simple_json_parser()
+    nlohmann_include_src_dir = os.path.join(nlohmann_dir, "include/nlohmann")
+    nlohmann_include_dist_dir = os.path.join(include_dir, "nlohmann")
+
+    # nlohmann_header_src = os.path.join(nlohmann_dir, "json.hpp")
+    # nlohmann_header_dist = os.path.join(nlohmann_include_dir, "json.hpp")
+
+    # os.makedirs(nlohmann_include_dir, exist_ok=True)
+
+    # Delete repo if it exists
+    if os.path.exists(nlohmann_dir):
+        subprocess.run(["rm", "-rf", nlohmann_dir], check=True)
+
+    # Clone repo
+    nlohmann_url = "https://github.com/nlohmann/json.git"
+    subprocess.run(["git", "clone", nlohmann_url, nlohmann_dir], check=True)
+
+    # copy headers to references/include
+    subprocess.run(["cp", "-r", nlohmann_include_src_dir, nlohmann_include_dist_dir], check=True)
+
+fetch_nlohmann_json()
+
+# fetch_c_simple_json_parser()
+# build_c_simple_json_parser()
