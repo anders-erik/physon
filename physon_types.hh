@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <stack>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -18,6 +19,12 @@ enum class json_value_type {
 struct json_value {
     int store_id; // unique identifier for specific type
     json_value_type type;
+
+    // equal if identical type and store id
+    bool operator==(const json_value& other) const {
+        return type == other.type && store_id == other.store_id;
+    }
+
 };
 
 typedef std::string     json_string;
@@ -33,23 +40,12 @@ typedef std::vector<json_kv>
                         json_object;
 
 
-struct json_element {
-    json_value value; // value of the element
-
-    json_value parent;
-
-    // equal if identical type and store id
-    bool operator==(const json_element& other) const {
-        return value.type == other.value.type && value.store_id == other.value.store_id;
-    }
-
-    json_value& find(std::string key);       // for json_object - not recursive
-    json_array& all_kv();          // for json_object
-    json_object& all_entries();  // for json_array
-};
 
 
-/** Lists with all json data. This is kept separate from the json tree and needs to be queried when a json_value is read. */
+/** 
+    JSON data storage. 
+    The json object/array vectors store the array/object tree.
+ */
 struct json_store {
 
     std::vector<long long int> integers;
@@ -124,8 +120,10 @@ enum class parse_state {
 struct ParserCursor {
     size_t index = 0;
     parse_state state = parse_state::ROOT;  // Keeps track of the current parsing state
-    json_element current_element;             // element cursor
-    json_element current_container;           // container cursor
-    json_value_type current_container_type; // current container type (array or object)
+    // json_element current_element;             // element cursor
+    // json_element current_container;           // container cursor
+    // json_value_type current_container_type; // current container type (array or object)
+    std::stack<json_value> container_trace; // stack of current container level
+
 };
 

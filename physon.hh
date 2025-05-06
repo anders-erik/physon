@@ -17,7 +17,7 @@ struct Physon {
 
     json_store store; // store for all json data
     
-    json_element root_container; // the first element encountered in file
+    json_value root_value; // the first element encountered in file
 
     ParserCursor cursor;  // source string cursor
     std::vector<Token> tokens;
@@ -25,12 +25,30 @@ struct Physon {
     
     Physon(std::string json_str) : content {json_str} {}; 
 
-    void print_string();
+
+    // PRINT
+    void print_original();
+
+    /** Temporary string for stringification. */
+    std::string stringify_string;
+    /** returns full json structure as string */
+    std::string stringify();            
+    /** recursive string builder */    
+    void build_string(json_value value);
+    
+
+    // QUERYING
+    json_value& find(std::string key);      // for json_object - not recursive
+    json_object& get_object();              // for json_object
+    json_array& get_array();                // for json_array
+
+
+    // PARSING
     
     void parse();                   // parse the content
     void print_tokens();
 
-    json_value try_parse_element();
+    json_value try_parse_element(); /**  parse full literal or starts new container */
 
     json_value parse_true_literal();
     json_value parse_false_literal();
@@ -46,51 +64,103 @@ struct Physon {
 
 
 
-void Physon::print_string() {
+void Physon::print_original() {
     std::cout << "JSON String: " << std::endl 
     << "------" << std::endl 
     << content << std::endl 
     << "------" << std::endl;
 }
 
+std::string Physon::stringify(){
+    stringify_string = "";
+
+    build_string(root_value);
+
+    return stringify_string;
+}
+
+void Physon::build_string(json_value value){
+    
+    if(is_literal(value.type)){
+
+        switch (value.type)
+        {
+        case json_value_type::NULL_:
+            stringify_string.append("null");
+            break;
+        case json_value_type::TRUE:
+            stringify_string.append("true");
+            break;
+        case json_value_type::FALSE:
+            stringify_string.append("false");
+            break;
+
+        default:
+            break;
+        }
+
+        return;
+    }
+
+    // Print array
+    if(value.type == json_value_type::ARRAY){
+        stringify_string.append("[");
+
+        json_array array =  store.get_array(value.store_id);
+
+        for(json_value array_entry : array){
+            build_string(array_entry);
+            stringify_string.append(", ");
+        }
+
+        // no comma after last entry
+        if(array.size() > 0)
+            stringify_string.erase(stringify_string.size()-2);
+
+        stringify_string.append("]");
+    }
+}
+
 
 void Physon::parse() {
     
     cursor.index = 0;
-    // Indicates that the root value is a literal
-    root_container.value.type = json_value_type::NULL_;
 
-    // grab root element
+    // grab root (top/first/only) element
     json_value new_value = try_parse_element();
+    root_value = new_value;
 
     // if root element is a literal type, then make sure no other elements are present
     if(is_literal(new_value.type)){
 
         if(cursor.index != content.size())
             throw std::runtime_error("Invalid JSON: Extra characters after root literal at index " + std::to_string(cursor.index));
-
+        
         return;
     }
 
     // As we now know that the root element is a container
-    root_container.value = new_value;
-    cursor.current_container.value = new_value;
+    cursor.container_trace.push(new_value);
 
-
+    // Main Parsing loop
     while(cursor.index < content.size()){
 
-        // Need to make sure that we are at a value-parsable state
-        new_value = try_parse_element();
 
+        if(cursor.container_trace.top().type == json_value_type::ARRAY){
 
-        if(cursor.current_container.value.type == json_value_type::ARRAY){
+            // Need to make sure that we are at a value-parsable state
+            new_value = try_parse_element();
 
             if(is_literal(new_value.type)){
-                json_array & array = store.get_array(cursor.current_container.value.store_id);
+                json_array & array = store.get_array(cursor.container_trace.top().store_id);
                 array.push_back(new_value);
-                cursor.current_element.value = new_value;
             }
             else if(is_container(new_value.type)){
+                // add new array to current container
+                json_array & array = store.get_array(cursor.container_trace.top().store_id);
+                array.push_back(new_value);
+
+                cursor.container_trace.push(new_value);
 
             }
 
@@ -103,26 +173,38 @@ void Physon::parse() {
 
             if(content[cursor.index] == ']'){
                 log("End of array at " << cursor.index);
+                cursor.container_trace.pop();
                 cursor.index++;
+                gobble_ws();
 
-                if(cursor.current_container == root_container){
-                    return; 
+                if(cursor.container_trace.size() == 1){
+                    return;
+                }
+                else if(cursor.container_trace.size() > 0){
+
+                    // keep popping if end of containers
+                    while(content[cursor.index] == ']'){
+                        log("End of array at " << cursor.index);
+                        cursor.container_trace.pop();
+                        cursor.index++;
+                        gobble_ws();
+                    }
+
+                    // We just closed the root array
+                    if(cursor.container_trace.size() == 0)
+                        return;
+
+                    // prepare for next value parse
+                    if(content[cursor.index] == ','){
+                        log("Comma at " << cursor.index);
+                        cursor.index++;
+                    }
                 }
                 
-                // go to parent
-
             }
 
         }
 
-        if(new_value.type == json_value_type::NULL_){
-            
-        }
-        
-        // Parse containers
-
-
-        // gobble_ws();
     }
 
 }
@@ -178,7 +260,8 @@ json_value Physon::try_parse_element(){
         // cursor.index++;
     }
     else {
-        throw std::runtime_error("Invalid JSON: Unexpected first char in new value. Occured at index " + std::to_string(cursor.index));
+        std::string error_msg = "Invalid JSON: Unexpected first char '" + content.substr(cursor.index, 1) + "' in new value. Occured at index " + std::to_string(cursor.index);
+        throw std::runtime_error(error_msg);
     }
 
     gobble_ws();

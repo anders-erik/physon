@@ -28,16 +28,21 @@ int main (int argc, char **argv) {
     // std::string json_string = load_file("data/null.json");
     // std::string json_string = load_file("data/true.json");
     // std::string json_string = load_file("data/false.json");
-    std::string json_string = load_file("data/name_literals_array.json");
+    // std::string json_string = load_file("data/name_literals_array.json");
+    std::string json_string = load_file("data/name_literals_nested_array.json");
     // std::string json_string = load_file("data/penpaper.json");
 
     Physon physon (json_string);
 
     physon.parse();
 
-    physon.print_string();
+    physon.print_original();
     physon.print_tokens();
+    
+    // physon.build_string(physon.root_value);
 
+    std::cout << std::endl << physon.stringify() << std::endl;
+    
 
     // bool space =  is_whitespace(' ');
     // bool tab =  is_whitespace('\t');
