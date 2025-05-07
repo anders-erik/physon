@@ -61,8 +61,13 @@ struct json_store {
     int add_float(double value);
     double& get_float(int id);
 
-    int add_string(std::string value);
-    std::string& get_string(int id);
+    int add_string(std::string new_str){
+        strings.push_back(new_str);
+        return strings.size() - 1;
+    }
+    std::string& get_string(int id){
+        return strings[id];
+    }
 
     int add_array(){
         arrays.emplace_back();

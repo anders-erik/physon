@@ -4,12 +4,16 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <sstream>
 
 #include "physon_types.hh"
 
 
 #define log(x) std::cout << x << std::endl;
 
+#define QUOTATION_MARK      '\u0022'
+#define SOLLIDUS            '\u002F'
+#define SOLLIDUS_BACKWARDS  '\u005C'
 
 
 struct Physon {
@@ -35,6 +39,8 @@ struct Physon {
     std::string stringify();            
     /** recursive string builder */    
     void build_string(json_value value);
+    /** Converts a std::string to is JSON equivelence. e.g. <I "mean" it..> --> <"I \"mean\" it.."> */
+    std::string string_to_json_representation(std::string cpp_string);
     
 
     // QUERYING
@@ -55,6 +61,7 @@ struct Physon {
     void close_array();
 
     json_value parse_literal(); /** Parse literal with cursor confirmed pointing at first char in literal */
+    json_value parse_string_literal();  /** parse and progress index. */
     json_value parse_true_literal();    /** confirm "true" chars and progress index. */
     json_value parse_false_literal();   /** confirm "false" chars and progress index. */
     json_value parse_null_literal();    /** confirm "null" chars and progress index. */
@@ -89,6 +96,54 @@ std::string Physon::stringify(){
     return stringify_string;
 }
 
+std::string Physon::string_to_json_representation(std::string cpp_string){
+
+    std::string json_representation = "";
+
+    json_representation += "\"";
+
+    for(const char ch : cpp_string){
+        
+        if(ch == QUOTATION_MARK){
+            json_representation += "\\\"";
+        }
+        else if (ch == SOLLIDUS){
+            json_representation += "/\\";
+        }
+        else if(ch == SOLLIDUS_BACKWARDS){
+            json_representation += "\\\\";
+        }
+        else if(ch == '\u0008'){
+            json_representation += "\\b";
+        }
+        else if(ch == '\u0009'){
+            json_representation += "\\t";
+        }
+        else if(ch == '\u000A'){
+            json_representation += "\\n";
+        }
+        else if(ch == '\u000C'){
+            json_representation += "\\f";
+        }
+        else if(ch == '\u000D'){
+            json_representation += "\\r";
+        }
+        else if( (ch >= '\u0000' && ch < '\u0020') ){
+            json_representation += "\\u00XX";
+            // TODO: CONVERT ch to hex-string and append
+            json_representation += std::to_string(ch);
+        }
+        else {
+            json_representation += ch;
+        }
+
+    }
+
+    json_representation += "\"";
+
+    return json_representation;
+}
+
 void Physon::build_string(json_value value){
     
     if(is_literal(value.type)){
@@ -104,7 +159,16 @@ void Physon::build_string(json_value value){
         case json_value_type::FALSE:
             stringify_string.append("false");
             break;
-
+        case json_value_type::STRING:
+            // 1) Grab value from store
+            // 2) convert to json representation
+            // 3) append to stringify-string
+            stringify_string.append(
+                string_to_json_representation(
+                    store.get_string(value.store_id)
+                )
+            );
+            break;
         default:
             break;
         }
@@ -258,31 +322,29 @@ json_value Physon::parse_literal(){
 
     char current_char = content[cursor.index];
 
-    if(current_char == 't'){
+
+    if     (current_char == 't')
         new_value = parse_true_literal();
-        state = JSON_PARSE_STATE::END_VALUE;
-    }
-    else if(current_char == 'f'){
+
+    else if(current_char == 'f')
         new_value = parse_false_literal();
-        state = JSON_PARSE_STATE::END_VALUE;
-    }
-    else if(current_char == 'n'){
+
+    else if(current_char == 'n')
         new_value = parse_null_literal();
-        state = JSON_PARSE_STATE::END_VALUE;
-    }
-    else if(current_char == '"'){
-        // STRING
-        state = JSON_PARSE_STATE::END_VALUE;
-    }
-    else if(current_char == '-' || (current_char >= '0' && current_char <= '9' )){
-        // NUMBER
-        state = JSON_PARSE_STATE::END_VALUE;
-    }
-    else {
+
+    else if(current_char == '"')
+        new_value = parse_string_literal();
+
+    else if(current_char == '-' || (current_char >= '0' && current_char <= '9' ))
+        json_error("Error: Number parsing not yet implemented.");
+
+    else
         json_error("Invalid JSON: Expected beginning of literal. Instead '" + content.substr(cursor.index, 1) + "' at first literal character. Occured at global index " + std::to_string(cursor.index));
-    }
+    
 
     gobble_ws();
+
+    state = JSON_PARSE_STATE::END_VALUE;
 
     return new_value;
 
@@ -344,6 +406,111 @@ void Physon::close_array(){
     return;
 };
 
+json_value Physon::parse_string_literal(){
+
+    cursor.index++;
+
+    std::string new_string = "";
+
+    while(content[cursor.index] != QUOTATION_MARK ){
+
+        // Current char
+        char ch = content[cursor.index];
+        
+        if( ch >= '\u0000' && ch < '\u0020'){
+            json_error("Error: unescaped control character in string. Found at index " + std::to_string(content[cursor.index]) );
+        }
+        else if(ch == SOLLIDUS_BACKWARDS){
+
+            // skip backwards sollidus
+            cursor.index++;
+            ch = content[cursor.index];
+
+            switch (ch)
+            {
+
+            case QUOTATION_MARK:
+                new_string += QUOTATION_MARK;
+                break;
+            case SOLLIDUS:
+                new_string += SOLLIDUS;
+                break;
+            case SOLLIDUS_BACKWARDS:
+                new_string += SOLLIDUS_BACKWARDS;
+                break;
+            
+            case 'b':
+                new_string += '\u0008';
+                break;
+            case 'f':
+                new_string += '\u000C';
+                break;
+            case 'n':
+                new_string += '\u000A';
+                break;
+            case 'r':
+                new_string += '\u000D';
+                break;
+            case 't':
+                new_string += '\u0009';
+                break;
+
+            case 'u':
+                // Parse unicode : '\uXXXX'
+                // Currently only supports ASCII
+                {
+                    std::string unicode_digits = content.substr(cursor.index+1, 4);
+
+                    unsigned int unicode_value_decimal;
+                    std::stringstream _stringstream;
+                    _stringstream << std::hex << unicode_digits;
+                    _stringstream >> unicode_value_decimal;
+
+                    // log(unicode_digits);
+                    // log(unicode_value_decimal);
+
+                    // ASCII
+                    if(unicode_value_decimal < 0x7F){
+                        new_string += static_cast<char>(unicode_value_decimal);
+                    }
+                    else {
+                        json_error("ERROR: non-ASCII unicode values in string are not yet supported.");
+                    }
+                }
+                // move to last unicode digit
+                cursor.index += 4;
+                break;
+            
+            default:
+                break;
+            }
+
+        }
+        else {
+            new_string += content[cursor.index];
+        }
+    
+
+        // Next char
+        cursor.index++;
+
+        if(cursor.index >= content.size())
+            json_error("Error: Unclosed string literal. Expected closing quotation mark before end of content string.");
+    }
+
+    // Move past closing quotation mark
+    cursor.index++;
+
+    gobble_ws();
+
+    // Add string to store
+    json_value new_value;
+    new_value.type = json_value_type::STRING;
+    new_value.store_id = store.add_string(new_string);
+
+
+    return new_value;
+};
 
 json_value Physon::parse_true_literal(){
 
