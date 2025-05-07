@@ -25,6 +25,8 @@ int main (int argc, char **argv) {
 
     std::cout << "Hello, Physon!" << std::endl;
 
+    // std::string json_string = load_file("data/empty.json");
+    // std::string json_string = load_file("data/ws.json");
     // std::string json_string = load_file("data/null.json");
     // std::string json_string = load_file("data/true.json");
     // std::string json_string = load_file("data/false.json");

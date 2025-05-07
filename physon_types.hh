@@ -109,17 +109,22 @@ struct Token {
         : type(type), str_start_i(str_start_i), str_length(str_length) {}
 };
 
-enum class parse_state {
-    ROOT, // Looking for the root value
-    ARRAY_START,
-    ARRAY_END,
-    ARRAY_NEW_VALUE,
+enum class JSON_PARSE_STATE {
+
+    BEFORE_ROOT,    /** Looking for the root value */
+    END_OF_ROOT,    /** Reached end of root value */
+
+    NEW_ARRAY,
+    NEW_VALUE,
+    END_VALUE,
+
+    ERROR,
 };
 
 
 struct ParserCursor {
     size_t index = 0;
-    parse_state state = parse_state::ROOT;  // Keeps track of the current parsing state
+    JSON_PARSE_STATE state = JSON_PARSE_STATE::BEFORE_ROOT;  // Keeps track of the current parsing state
     // json_element current_element;             // element cursor
     // json_element current_container;           // container cursor
     // json_value_type current_container_type; // current container type (array or object)
