@@ -33,8 +33,12 @@ int main (int argc, char **argv) {
     // std::string json_string = load_file("data/name_literals_array.json");
     // std::string json_string = load_file("data/name_literals_nested_array.json");
     std::string json_string = load_file("data/string_array.json");
-    // std::string json_string = load_file("data/unclosed_string.json");
+    // std::string json_string = load_file("data/object.json");
     // std::string json_string = load_file("data/penpaper.json");
+
+    // Non-valid
+    // std::string json_string = load_file("data/unclosed_string.json");
+
 
     Physon physon (json_string);
 

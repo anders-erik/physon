@@ -77,6 +77,15 @@ struct json_store {
         return arrays[id];
     }
 
+    int add_object(){
+        objects.emplace_back();
+        return objects.size() - 1;
+    }
+
+    json_object& get_object(int id){
+        return objects[id];
+    }
+
     void clear() {
         integers.clear();
         floats.clear();
@@ -116,12 +125,20 @@ struct Token {
 
 enum class JSON_PARSE_STATE {
 
-    BEFORE_ROOT,    /** Looking for the root value */
-    END_OF_ROOT,    /** Reached end of root value */
+    BEFORE_ROOT_VALUE,    /** Looking for the root value */
+    END_OF_ROOT_VALUE,    /** Reached end of root value */
+    DONE,
 
-    NEW_ARRAY,
-    NEW_VALUE,
-    END_VALUE,
+    ARRAY_ENTERED,
+    ARRAY_ENTER,
+    ARRAY_CLOSE,
+
+    NEW_OBJECT,
+    NEW_KV,
+
+    VALUE_NEW_VALUE_CHAR,
+    VALUE_PARSE_LITERAL,
+    VALUE_END_OF_VALUE,
 
     ERROR,
 };
@@ -129,7 +146,7 @@ enum class JSON_PARSE_STATE {
 
 struct ParserCursor {
     size_t index = 0;
-    JSON_PARSE_STATE state = JSON_PARSE_STATE::BEFORE_ROOT;  // Keeps track of the current parsing state
+    JSON_PARSE_STATE state = JSON_PARSE_STATE::BEFORE_ROOT_VALUE;  // Keeps track of the current parsing state
     // json_element current_element;             // element cursor
     // json_element current_container;           // container cursor
     // json_value_type current_container_type; // current container type (array or object)
