@@ -9,22 +9,29 @@
 enum class json_value_type {
     STRING = 0,
     NUMBER,
-    OBJECT,
-    ARRAY,
     TRUE,
     FALSE,
     NULL_,
+
+    ARRAY,
+    OBJECT,
+    KV,
+
+    NONE, /** When no type is valid */
 };
 
 struct json_value {
-    int store_id; // unique identifier for specific type
-    json_value_type type;
+    int store_id = 0; // unique identifier for specific type
+    json_value_type type = json_value_type::NONE;
 
     // equal if identical type and store id
     bool operator==(const json_value& other) const {
         return type == other.type && store_id == other.store_id;
     }
 
+    json_value () : store_id {0},type {json_value_type::NONE} {};
+    json_value (json_value_type _type) : type {_type} {};
+    json_value (int _store_id, json_value_type _type) : store_id {_store_id}, type {_type} {};
 };
 
 typedef std::string     json_string;
@@ -32,11 +39,11 @@ typedef bool            json_bool;
 typedef std::nullptr_t  json_null;
 typedef double          json_float;
 typedef long long int   json_int;
-typedef std::pair<json_string, json_value> json_kv;
 
+typedef std::pair<json_string, json_value> json_kv;
 typedef std::vector<json_value> 
                         json_array;
-typedef std::vector<json_kv> 
+typedef std::vector<json_value> 
                         json_object;
 
 
@@ -52,8 +59,9 @@ struct json_store {
     std::vector<double> floats;
     std::vector<std::string> strings;
 
-    std::vector<json_object> objects;
     std::vector<json_array> arrays;
+    std::vector<json_object> objects;
+    std::vector<json_kv> kvs;
 
     int add_integer(long long int value);
     long long int& get_integer(int id);
@@ -69,21 +77,43 @@ struct json_store {
         return strings[id];
     }
 
-    int add_array(){
+    json_value new_array(){
         arrays.emplace_back();
-        return arrays.size() - 1;
-    } 
+
+        json_value array;
+        array.store_id = arrays.size() - 1;
+        array.type = json_value_type::ARRAY;
+
+        return array;
+    }
     json_array& get_array(int id){
         return arrays[id];
     }
 
-    int add_object(){
+    json_value new_object(){
         objects.emplace_back();
-        return objects.size() - 1;
-    }
 
+        json_value object;
+        object.store_id = objects.size() - 1;
+        object.type = json_value_type::OBJECT;
+
+        return object;
+    }
     json_object& get_object(int id){
         return objects[id];
+    }
+    json_value new_kv(json_string key){
+        
+        // Store key-string
+        json_kv& kv = kvs.emplace_back();
+        kv.first = key;
+
+        json_value value (kvs.size()-1, json_value_type::KV);
+
+        return value;
+    }
+    json_kv& get_kv(int id){
+        return kvs[id];
     }
 
     void clear() {
@@ -95,6 +125,7 @@ struct json_store {
     }
 
 };
+
 
 
 enum class token_type {
@@ -125,18 +156,22 @@ struct Token {
 
 enum class JSON_PARSE_STATE {
 
-    BEFORE_ROOT_VALUE,    /** Looking for the root value */
-    END_OF_ROOT_VALUE,    /** Reached end of root value */
-    DONE,
+    ROOT_BEFORE_VALUE,      /** Looking for the root value */
+    ROOT_END_OF_VALUE,      /** Reached end of root value */
+    DONE,                   /** Parsing done. Return primary parse method. */
 
     ARRAY_ENTERED,
     ARRAY_ENTER,
     ARRAY_CLOSE,
 
-    NEW_OBJECT,
+    OBJECT_ENTER,
+    OBJECT_PARSE_KEY_COMMA,
+    OBJECT_PARSE_VALUE,
+    OBJECT_CLOSE,
+
     NEW_KV,
 
-    VALUE_NEW_VALUE_CHAR,
+    VALUE_AT_NEW_VALUE_CHAR,
     VALUE_PARSE_LITERAL,
     VALUE_END_OF_VALUE,
 
@@ -146,7 +181,7 @@ enum class JSON_PARSE_STATE {
 
 struct ParserCursor {
     size_t index = 0;
-    JSON_PARSE_STATE state = JSON_PARSE_STATE::BEFORE_ROOT_VALUE;  // Keeps track of the current parsing state
+    JSON_PARSE_STATE state = JSON_PARSE_STATE::ROOT_BEFORE_VALUE;  // Keeps track of the current parsing state
     // json_element current_element;             // element cursor
     // json_element current_container;           // container cursor
     // json_value_type current_container_type; // current container type (array or object)
