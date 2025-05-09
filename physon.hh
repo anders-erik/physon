@@ -5,6 +5,8 @@
 #include <fstream>
 #include <string>
 #include <sstream>
+#include <iomanip> // setprecision
+#include <climits> // LLONG_MAX
 
 #include "physon_types.hh"
 
@@ -42,6 +44,7 @@ struct Physon {
     std::string stringify();            
     /** recursive string builder */    
     void build_string(JsonWrapper value);
+    std::string float_to_json_representation(json_float float_);
     /** Converts a std::string to is JSON equivelence. e.g. <I "mean" it..> --> <"I \"mean\" it.."> */
     std::string string_to_json_representation(std::string cpp_string);
     
@@ -88,6 +91,9 @@ struct Physon {
 
     void value_parse_literal(); /** Parse literal with cursor confirmed pointing at first char in literal */
     JsonWrapper parse_string_literal();  /** parse and progress index. */
+    std::string parse_digits();
+    bool integer_within_limits(std::string int_);
+    JsonWrapper parse_number_literal();  /** parse and progress index. */
     JsonWrapper parse_true_literal();    /** confirm "true" chars and progress index. */
     JsonWrapper parse_false_literal();   /** confirm "false" chars and progress index. */
     JsonWrapper parse_null_literal();    /** confirm "null" chars and progress index. */
@@ -101,6 +107,17 @@ struct Physon {
     bool is_close_array_char();
     bool is_new_object_char();
     bool is_close_object_char();
+    bool is_valid_number_char(){
+        char c = current_char();
+        bool is_number_char = (c >= '0' && c <= '9') || c == '-' || c == '+' || c == 'e' || c == 'E' || c == '.';
+        return is_number_char;
+    };
+    bool is_digit(char c){
+        return (c >= '0' && c <= '9') ? true : false;
+    };
+    bool is_non_zero_digit(char c){
+        return (c >= '1' && c <= '9') ? true : false;
+    };
 
     bool is_whitespace(char ch);
     void gobble_ws();               /** progress index until cursor not pointing at whitespace */
@@ -141,6 +158,52 @@ std::string Physon::stringify(){
     build_string(root_value);
 
     return stringify_string;
+}
+
+
+
+std::string Physon::float_to_json_representation(json_float float_){
+
+    int precision = 7;
+
+    /** Examples : precision == 7 */
+    enum class REPRESENTATION {
+        FIXED,              // 0.0 -> 0.0000000
+        FIXED_TRIMMED,      // 0.0 -> 0.0 : precision == 1
+        SCIENTIFIC,         // 0.0 -> 0.0000000e+00
+    } representation = REPRESENTATION::SCIENTIFIC;
+
+
+    std::string str_return = "";
+
+    std::ostringstream ss;
+
+    switch (representation){
+
+    case REPRESENTATION::FIXED:
+    case REPRESENTATION::FIXED_TRIMMED:
+        ss << std::fixed << std::setprecision(precision) << float_;
+        break;
+
+    case REPRESENTATION::SCIENTIFIC:
+        ss << std::scientific << std::setprecision(precision) << float_;
+        break;
+
+    }
+
+    str_return = ss.str();
+
+
+    // TODO:  THIS WILL BE REMOVED WITH THE PRECISION SETTING
+    if(representation == REPRESENTATION::FIXED_TRIMMED){
+
+         // TRIM TRAILING ZEROS
+        while( str_return[str_return.length()-2] == '0')
+            str_return.pop_back();
+
+    }
+
+    return str_return;
 }
 
 std::string Physon::string_to_json_representation(std::string cpp_string){
@@ -206,6 +269,18 @@ void Physon::build_string(JsonWrapper value){
         case JSON_TYPE::FALSE:
             stringify_string.append("false");
             break;
+        case JSON_TYPE::FLOAT:
+            {
+                json_float float_ = store.get_float(value.store_id);
+                std::string float_str = float_to_json_representation(float_);
+
+                stringify_string.append( float_str );
+            }
+            break;
+        case JSON_TYPE::INTEGER:
+            stringify_string.append( std::to_string(store.get_integer(value.store_id) ) );
+            break;
+
         case JSON_TYPE::STRING:
             // 1) Grab value from store
             // 2) convert to json representation
@@ -412,6 +487,8 @@ bool Physon::is_literal(JSON_TYPE type){
             type == JSON_TYPE::TRUE ||
             type == JSON_TYPE::FALSE ||
             type == JSON_TYPE::NUMBER ||
+            type == JSON_TYPE::FLOAT ||
+            type == JSON_TYPE::INTEGER ||
             type == JSON_TYPE::STRING;
 }
 bool Physon::is_container(JSON_TYPE type){
@@ -455,11 +532,12 @@ void Physon::value_parse_literal(){
     else if(current_char == '"')
         new_value = parse_string_literal();
 
-    else if(current_char == '-' || (current_char >= '0' && current_char <= '9' ))
-        json_error("Error: Number parsing not yet implemented.");
+    else if(current_char == '-' || is_digit(current_char) )
+        new_value = parse_number_literal();
+        // json_error("Number parsing not yet implemented.");
 
     else
-        json_error("Invalid JSON: Expected beginning of literal. Instead '" + content.substr(cursor.index, 1) + "' at first literal character. Occured at global index " + std::to_string(cursor.index));
+        json_error("Unexpected first literal character.");
     
 
     gobble_ws();
@@ -572,6 +650,285 @@ void Physon::object_close(){
         state = JSON_PARSE_STATE::ROOT_END_OF_VALUE;
 
 };
+
+std::string Physon::parse_digits(){
+    std::string digit_string = "";
+
+    while(is_digit(current_char())){
+        digit_string += current_char();
+        cursor.index++;
+    }
+
+    return digit_string;
+}
+
+bool Physon::integer_within_limits(std::string str){
+
+    // TODO: Catch edge cases of integers.  LLONG_MAX < int < e19
+
+    if(str[0] == '-')
+        str = str.substr(1, str.size()-1);
+
+    if(str.length() > std::to_string(LLONG_MAX).length() )
+        return false;
+    
+    return true;
+}
+
+JsonWrapper Physon::parse_number_literal(){
+
+    enum class NUMBER_STATE {
+        NEGATIVE,
+        LEADING_ZERO,
+        INTEGRAL_DIGITS,
+        FRACTION,
+        FRACTIONAL_DIGITS,
+        EXPONENT_E,
+        EXPONENT_SIGN,
+        EXPONENT_DIGITS,
+        END,
+    } number_state = NUMBER_STATE::NEGATIVE;
+
+    bool is_fractional = false;
+    
+    std::string string_to_parse = "";
+
+    // FIRST CHECKS
+    if(current_char() == '-'){
+        string_to_parse += "-";
+        cursor.index++;
+    }
+    number_state = NUMBER_STATE::LEADING_ZERO;
+    
+    if (current_char() == '0'){
+        string_to_parse += "0";
+        cursor.index++;
+
+        if(is_digit(current_char()))
+            json_error("Additional leading zeros.");
+
+    }
+    else if (is_non_zero_digit(current_char())) {
+        string_to_parse += parse_digits();
+    }
+    else {
+        json_error("First digit in number not valid. ");
+    }
+    number_state = NUMBER_STATE::FRACTION;
+
+    if(current_char() == '.'){
+        is_fractional = true;
+        string_to_parse += ".";
+        cursor.index++;
+
+        if(! is_digit(current_char()))
+            json_error("Fraction delimiter must be followed by digit.");
+
+        string_to_parse += parse_digits();
+    }
+    number_state = NUMBER_STATE::EXPONENT_E;
+
+    if(current_char() == 'e' || current_char() == 'E'){
+
+        string_to_parse += current_char();
+        cursor.index++;
+        number_state = NUMBER_STATE::EXPONENT_SIGN;
+
+        bool e_trail_ok = is_digit(current_char()) || current_char() == '+' || current_char() == '-';
+        if(! e_trail_ok)
+            json_error("Exponent char not trailed by sign nor digit.");
+        
+        if(current_char() == '+' || current_char() == '-'){
+            string_to_parse += current_char();
+            cursor.index++;
+        }
+        number_state = NUMBER_STATE::EXPONENT_DIGITS;
+
+        if(! is_digit(current_char()))
+            json_error("No exponent digits detected during number parsing.");
+
+        string_to_parse += parse_digits();
+    }
+
+    number_state = NUMBER_STATE::END;
+
+    JsonWrapper wrapper;
+    if(is_fractional){
+        json_float float_ = std::stod(string_to_parse);
+        wrapper = store.new_float(float_);
+    }
+    else {
+
+        if(! integer_within_limits(string_to_parse))
+            json_error("Integer too large for internal representation.");
+
+        json_int int_ = std::stol(string_to_parse);
+        wrapper = store.new_integer(int_);
+    }
+
+    return wrapper;
+
+    // else if (is_digit(current_char())){
+    //     number_state = NUMBER_STATE::INTEGRAL_DIGITS;
+    // }
+    // else {
+        
+    // }
+
+    // while (!end_of_number)
+    // {
+        
+    //     switch (number_state){
+        
+    //     case NUMBER_STATE::LEADING_ZERO:
+    //         {
+    //             if(current_char() == '0'){
+    //                 is_leading_zero = true;
+    //                 string_to_parse += "0";
+    //                 cursor.index++;
+    //                 number_state = NUMBER_STATE::FRACTION;
+    //             }
+    //             else if ( is_digit(current_char()) ){
+    //                 number_state = NUMBER_STATE::INTEGRAL_DIGITS;
+    //             }
+    //             else {
+    //                 json_error("Invalid char when checking for leading zero in number literal.");
+    //             }
+    //         }
+    //         break;
+        
+    //     case NUMBER_STATE::INTEGRAL_DIGITS:
+    //         {
+    //             if(is_digit(current_char())){
+    //                 string_to_parse += current_char();
+    //                 cursor.index++;
+    //             }
+    //             else {
+    //                 number_state = NUMBER_STATE::FRACTION;
+    //             }
+
+    //         }
+    //         break;
+
+    //     case NUMBER_STATE::FRACTION:
+    //         {
+    //             if(current_char() == '.'){
+    //                 is_fractional = true;
+    //                 string_to_parse += '.';
+    //                 cursor.index++;
+    //                 number_state = NUMBER_STATE::FRACTIONAL_DIGITS;
+    //             }
+    //             else if (current_char() == 'e' || current_char() == 'E') {
+    //                 number_state = NUMBER_STATE::EXPONENT_E;
+    //             }
+    //             else {
+    //                 number_state = NUMBER_STATE::END;
+    //             }
+                
+    //         }
+    //         break;
+
+    //     case NUMBER_STATE::FRACTIONAL_DIGITS:
+    //         {
+    //             if(is_digit(current_char())){
+    //                 string_to_parse += current_char();
+    //                 cursor.index++;
+    //             }
+    //             else {
+    //                 number_state = NUMBER_STATE::EXPONENT_E;
+    //             }
+                
+    //         }
+    //         break;
+
+    //     case NUMBER_STATE::EXPONENT_E:
+    //         {
+    //             enum class EXPONENT_STATE {
+    //                 E,
+    //                 SIGN,
+    //                 DIGITS,
+    //                 DONE,
+    //             };
+
+    //             EXPONENT_STATE exponent_state = EXPONENT_STATE::E;
+
+    //             while(exponent_state != EXPONENT_STATE::DONE){
+
+    //                 switch (exponent_state){
+
+    //                 case EXPONENT_STATE::E :
+    //                     {
+    //                         if(current_char() == 'e' || current_char() == 'E'){
+    //                             string_to_parse += current_char();
+    //                             cursor.index++;
+    //                             exponent_state = EXPONENT_STATE::SIGN;
+    //                         }
+    //                         else {
+    //                             json_error("Failed to identify 'e'/'E' character while in exponent state during number parse. ");
+    //                         }
+    //                     }
+    //                     break;
+
+    //                 case EXPONENT_STATE::SIGN :
+    //                     {
+    //                         if(current_char() == '+' || current_char() == '-'){
+    //                             string_to_parse += current_char();
+    //                             cursor.index++;
+    //                         }
+    //                         exponent_state = EXPONENT_STATE::DIGITS;
+
+    //                     }
+    //                     break;
+
+    //                 case EXPONENT_STATE::DIGITS :
+    //                     {
+    //                         if( is_digit(current_char()) ){
+    //                             string_to_parse += current_char();
+    //                             cursor.index++;
+    //                         }
+    //                         else {
+    //                             exponent_state = EXPONENT_STATE::DONE;
+    //                         }
+                            
+    //                     }
+    //                     break;
+                    
+    //                 default:
+    //                     break;
+    //                 }
+                    
+    //             }
+                
+    //             number_state = NUMBER_STATE::END;
+    //         }
+    //         break;
+        
+    //     default:
+    //         break;
+    //     }
+    // }
+
+    
+    
+    // type = JSON_TYPE::FLOAT;
+    // if(type == JSON_TYPE::FLOAT){
+    //     const char* str_cnst = string_to_parse.c_str();
+    //     char * c_str = (char*)str_cnst;
+    //     char * c_str_end = c_str;
+    //     char ** str_end = &c_str_end;
+    //     json_float fl = strtod(str_cnst, str_end);
+    //     std::cout << fl << std::endl;
+        
+    // }
+    // else if (type == JSON_TYPE::INTEGER){
+    //     // json_int integer = std::to_integer(string_to_parse);
+    // }
+    // else {
+    //     json_error("Failed to determine number type during parsing of literal.");
+    // }
+
+    // return store.new_integer(1);
+}
 
 JsonWrapper Physon::parse_string_literal(){
 

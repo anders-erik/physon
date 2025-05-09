@@ -35,7 +35,13 @@ int main (int argc, char **argv) {
     // std::string json_string = load_file("data/name_literals_nested_array.json");
     // std::string json_string = load_file("data/string_array.json");
     // std::string json_string = load_file("data/object.json");
-    std::string json_string = load_file("data/object_nested.json");
+    // std::string json_string = load_file("data/object_nested.json");
+
+    // std::string json_string = load_file("data/integer.json");
+    std::string json_string = load_file("data/integers.json");
+    // std::string json_string = load_file("data/numbers.json");
+    // std::string json_string = load_file("data/numbers_2.json");
+
     // std::string json_string = load_file("data/penpaper.json");
 
     // Non-valid

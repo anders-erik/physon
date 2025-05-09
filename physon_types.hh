@@ -10,12 +10,17 @@ void print_type_sizes();
 
 
 enum class JSON_TYPE {
-    STRING = 0,
-    NUMBER,
+
+    NULL_ = 0,
     TRUE,
     FALSE,
-    NULL_,
 
+    STRING,
+
+    NUMBER,
+    FLOAT,
+    INTEGER,
+    
     ARRAY,
     OBJECT,
     KV,
@@ -124,11 +129,21 @@ struct json_store {
     //     return bools[id];
     // }
 
-    int add_integer(long long int value);
-    long long int& get_integer(int id);
+    JsonWrapper new_integer(long long int value){
+        integers.emplace_back(value);
+        return JsonWrapper(integers.size()-1, JSON_TYPE::INTEGER);
+    }
+    json_int& get_integer(int id){
+        return integers[id];
+    }
 
-    int add_float(double value);
-    double& get_float(int id);
+    JsonWrapper new_float(double value){
+        floats.emplace_back(value);
+        return JsonWrapper(floats.size()-1, JSON_TYPE::FLOAT);
+    }
+    json_float& get_float(int id){
+        return floats[id];
+    }
 
     int add_string(std::string new_str){
         strings.push_back(new_str);

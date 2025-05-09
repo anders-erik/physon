@@ -71,6 +71,7 @@
         "charconv": "cpp",
         "chrono": "cpp",
         "regex": "cpp",
-        "format": "cpp"
+        "format": "cpp",
+        "climits": "cpp"
     }
 }
