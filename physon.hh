@@ -21,7 +21,7 @@ struct Physon {
 
     json_store store; // store for all json data
     
-    json_value root_value; // the first element encountered in file
+    JsonWrapper root_value; // the first element encountered in file
 
     ParserCursor cursor;  // source string cursor
     std::vector<Token> tokens;
@@ -41,16 +41,18 @@ struct Physon {
     /** returns full json structure as string */
     std::string stringify();            
     /** recursive string builder */    
-    void build_string(json_value value);
+    void build_string(JsonWrapper value);
     /** Converts a std::string to is JSON equivelence. e.g. <I "mean" it..> --> <"I \"mean\" it.."> */
     std::string string_to_json_representation(std::string cpp_string);
     
 
     // QUERYING
-    json_value& find(std::string key);      // for json_object - not recursive
-    json_object& get_object();              // for json_object
-    json_array& get_array();                // for json_array
+    JsonWrapper& find(std::string key);      // for json_object_wrap - not recursive
+    json_object_wrap& get_object();              // for json_object_wrap
+    json_array_wrap& get_array();                // for json_array
 
+    // UNWRAPPING
+    json_bool& unwrap_bool(JsonWrapper wrapper);
 
     // PARSING
 
@@ -63,14 +65,15 @@ struct Physon {
     void array_entered();
     
     void index_advance();
-    void comma_skip();
+    void comma_skip(); /** Branching based on the container. */
     void colon_skip();
     void value_at_new_value_char();
     void value_end_of_value();
 
+    std::string state_to_string();
     void json_error(std::string error_msg);
 
-    void add_value_to_current_container(json_value value);
+    void add_value_to_current_container(JsonWrapper value);
     
     void parse();                   /** Parse the content string */
 
@@ -83,15 +86,15 @@ struct Physon {
     void object_parse_key_comma();
     void object_close();
 
-    json_value value_parse_literal(); /** Parse literal with cursor confirmed pointing at first char in literal */
-
-    json_value parse_string_literal();  /** parse and progress index. */
-    json_value parse_true_literal();    /** confirm "true" chars and progress index. */
-    json_value parse_false_literal();   /** confirm "false" chars and progress index. */
-    json_value parse_null_literal();    /** confirm "null" chars and progress index. */
+    void value_parse_literal(); /** Parse literal with cursor confirmed pointing at first char in literal */
+    JsonWrapper parse_string_literal();  /** parse and progress index. */
+    JsonWrapper parse_true_literal();    /** confirm "true" chars and progress index. */
+    JsonWrapper parse_false_literal();   /** confirm "false" chars and progress index. */
+    JsonWrapper parse_null_literal();    /** confirm "null" chars and progress index. */
 
     char current_char();
     bool is_new_value_char();   /** is_new_literal_char() U is_new_container_char() */
+    bool is_quotation_mark();
     bool is_new_literal_char();
     bool is_new_container_char();
     bool is_new_array_char();
@@ -102,16 +105,27 @@ struct Physon {
     bool is_whitespace(char ch);
     void gobble_ws();               /** progress index until cursor not pointing at whitespace */
 
-    bool is_literal(json_value_type type);
-    bool is_container(json_value_type type);
+    bool is_literal(JSON_TYPE type);
+    bool is_container(JSON_TYPE type);
 
-    json_value current_container();
+    JsonWrapper current_container();
     bool current_container_is_array();
     bool current_container_is_object();
-    json_value_type current_container_type();
+    JSON_TYPE current_container_type();
     
 };
 
+
+// json_bool& Physon::unwrap_bool(JsonWrapper wrapper){
+//     bool is_false = wrapper.type == JSON_TYPE::FALSE;
+//     bool is_true = wrapper.type == JSON_TYPE::TRUE;
+//     if(wrapper.type == JSON_TYPE::TRUE)
+//         return store.get_bool(wrapper.store_id);
+//     if(wrapper.type == JSON_TYPE::FALSE)
+//         return store.get_bool(wrapper.store_id);
+//     else
+//         json_error("Tried to unwrap a non-boolean wrapper as boolan.");
+// }
 
 
 void Physon::print_original() {
@@ -177,22 +191,22 @@ std::string Physon::string_to_json_representation(std::string cpp_string){
     return json_representation;
 }
 
-void Physon::build_string(json_value value){
+void Physon::build_string(JsonWrapper value){
     
     if(is_literal(value.type)){
 
         switch (value.type)
         {
-        case json_value_type::NULL_:
+        case JSON_TYPE::NULL_:
             stringify_string.append("null");
             break;
-        case json_value_type::TRUE:
+        case JSON_TYPE::TRUE:
             stringify_string.append("true");
             break;
-        case json_value_type::FALSE:
+        case JSON_TYPE::FALSE:
             stringify_string.append("false");
             break;
-        case json_value_type::STRING:
+        case JSON_TYPE::STRING:
             // 1) Grab value from store
             // 2) convert to json representation
             // 3) append to stringify-string
@@ -210,12 +224,12 @@ void Physon::build_string(json_value value){
     }
 
     // Print array
-    if(value.type == json_value_type::ARRAY){
+    if(value.type == JSON_TYPE::ARRAY){
         stringify_string.append("[");
 
-        json_array array =  store.get_array(value.store_id);
+        json_array_wrap array =  store.get_array(value.store_id);
 
-        for(json_value array_entry : array){
+        for(JsonWrapper array_entry : array){
             build_string(array_entry);
             stringify_string.append(", ");
         }
@@ -226,9 +240,9 @@ void Physon::build_string(json_value value){
 
         stringify_string.append("]");
     }
-    else if(value.type == json_value_type::KV){
+    else if(value.type == JSON_TYPE::KV){
 
-        json_kv& kv = store.get_kv(value.store_id);
+        json_kv_wrap& kv = store.get_kv(value.store_id);
 
         stringify_string.append("\"");
         stringify_string.append(kv.first);
@@ -236,12 +250,12 @@ void Physon::build_string(json_value value){
 
         build_string(kv.second);
     }
-    else if(value.type == json_value_type::OBJECT){
+    else if(value.type == JSON_TYPE::OBJECT){
         stringify_string.append("{");
 
-        json_object object =  store.get_object(value.store_id);
+        json_object_wrap object =  store.get_object(value.store_id);
 
-        for(json_value kv : object){
+        for(JsonWrapper kv : object){
             
             build_string(kv);
 
@@ -283,7 +297,14 @@ void Physon::comma_skip(){
         json_error("Unexpected char instead of comma. Index = " + std::to_string(cursor.index));
 
     index_advance();
+
+    if(current_container_is_object())
+        state = JSON_PARSE_STATE::OBJECT_PARSE_KEY_COMMA;
+    else
+        state = JSON_PARSE_STATE::VALUE_AT_NEW_VALUE_CHAR;
+
 }
+
 void Physon::colon_skip(){
     if(current_char() != ':')
         json_error("Unexpected char during colon skip. Index = " + std::to_string(cursor.index));
@@ -294,10 +315,17 @@ void Physon::colon_skip(){
 void Physon::value_at_new_value_char(){
     gobble_ws();
 
+    // if in an object, we only accept string-keys!
+    // if(current_container_is_object() && is_quotation_mark()){
+    //     state = JSON_PARSE_STATE::OBJECT_PARSE_KEY_COMMA;
+    // }
+
     if(is_new_literal_char())
         state = JSON_PARSE_STATE::VALUE_PARSE_LITERAL;
     else if(is_new_array_char())
         state = JSON_PARSE_STATE::ARRAY_ENTER;
+    else if(is_new_object_char())
+        state = JSON_PARSE_STATE::OBJECT_ENTER;
     else 
         json_error("Error: not a valid character during state JSON_PARSE_STATE::VALUE_AT_NEW_VALUE_CHAR. Content index = " + std::to_string(cursor.index));
 
@@ -312,7 +340,6 @@ void Physon::value_end_of_value(){
     }
     else if(current_char() == ','){
         comma_skip();
-        state = JSON_PARSE_STATE::VALUE_AT_NEW_VALUE_CHAR;
     }
     else if(is_close_array_char()){
         state = JSON_PARSE_STATE::ARRAY_CLOSE;
@@ -338,7 +365,7 @@ void Physon::before_root_value(){
 
     // A single literal value in the json content string
     if(is_new_literal_char()){
-        root_value = value_parse_literal();
+        value_parse_literal();
         gobble_ws();
 
         if(cursor.index != content.size())
@@ -380,38 +407,38 @@ void Physon::print_tokens() {
     }
 }
 
-bool Physon::is_literal(json_value_type type){
-    return  type == json_value_type::NULL_ ||
-            type == json_value_type::TRUE ||
-            type == json_value_type::FALSE ||
-            type == json_value_type::NUMBER ||
-            type == json_value_type::STRING;
+bool Physon::is_literal(JSON_TYPE type){
+    return  type == JSON_TYPE::NULL_ ||
+            type == JSON_TYPE::TRUE ||
+            type == JSON_TYPE::FALSE ||
+            type == JSON_TYPE::NUMBER ||
+            type == JSON_TYPE::STRING;
 }
-bool Physon::is_container(json_value_type type){
-    return  type == json_value_type::ARRAY ||
-            type == json_value_type::OBJECT;
+bool Physon::is_container(JSON_TYPE type){
+    return  type == JSON_TYPE::ARRAY ||
+            type == JSON_TYPE::OBJECT;
 }
 
-json_value Physon::current_container(){
-    json_value empty_value;
+JsonWrapper Physon::current_container(){
+    JsonWrapper empty_value;
     return cursor.container_trace.empty() ? empty_value : cursor.container_trace.top();
 }
 bool Physon::current_container_is_array(){
-    return cursor.container_trace.top().type == json_value_type::ARRAY;
+    return cursor.container_trace.top().type == JSON_TYPE::ARRAY;
 }
 bool Physon::current_container_is_object(){
-    return cursor.container_trace.top().type == json_value_type::OBJECT;
+    return cursor.container_trace.top().type == JSON_TYPE::OBJECT;
 }
-json_value_type Physon::current_container_type(){
-    return cursor.container_trace.empty() ? json_value_type::NONE : cursor.container_trace.top().type;
+JSON_TYPE Physon::current_container_type(){
+    return cursor.container_trace.empty() ? JSON_TYPE::NONE : cursor.container_trace.top().type;
 }
 
 
-json_value Physon::value_parse_literal(){
+void Physon::value_parse_literal(){
 
     gobble_ws();
 
-    json_value new_value;
+    JsonWrapper new_value;
 
     char current_char = content[cursor.index];
 
@@ -437,11 +464,15 @@ json_value Physon::value_parse_literal(){
 
     gobble_ws();
 
+    // if(current_container_is_object()){
+    //     if(new_value.type != JSON_TYPE::STRING)
+    //         json_error("Parsed a non-string literal as new value inside an object container.");
+        
+
+    // }
     add_value_to_current_container(new_value);
 
     state = JSON_PARSE_STATE::VALUE_END_OF_VALUE;
-
-    return new_value;
 
 }
 
@@ -450,7 +481,7 @@ void Physon::array_enter(){
 
     index_advance();
 
-    json_value new_array = store.new_array();
+    JsonWrapper new_array = store.new_array();
 
     add_value_to_current_container(new_array);
 
@@ -483,16 +514,26 @@ void Physon::object_enter(){
     if(! is_new_object_char())
         json_error("Invalid JSON: Unexpected first char '" + content.substr(cursor.index, 1) + "' in enter object. Occured at index " + std::to_string(cursor.index));
 
-    // move to key quotation
+    // move past start_object token
     index_advance();
 
-    json_value new_object = store.new_object();
-
+    JsonWrapper new_object = store.new_object();
     add_value_to_current_container(new_object);
 
-    cursor.container_trace.push(new_object);
 
-    state = JSON_PARSE_STATE::OBJECT_PARSE_KEY_COMMA;
+    if(current_char() == '}'){
+        index_advance();
+        state = JSON_PARSE_STATE::VALUE_END_OF_VALUE;
+        return;
+    }
+    else if (current_char() == '"'){
+        cursor.container_trace.push(new_object);
+        state = JSON_PARSE_STATE::OBJECT_PARSE_KEY_COMMA;
+    }
+    else {
+        json_error("Invalid char encountered when entering object.");
+    }
+
 
     return;
 
@@ -504,11 +545,11 @@ void Physon::object_parse_key_comma(){
         json_error("Invalid JSON: Unexpected char '" + content.substr(cursor.index, 1) + "' when entered object. Occured at index " + std::to_string(cursor.index));
     
 
-    json_value key = parse_string_literal();
+    JsonWrapper key = parse_string_literal();
     colon_skip();
 
 
-    json_value kv = store.new_kv(store.get_string(key.store_id));
+    JsonWrapper kv = store.new_kv(store.get_string(key.store_id));
 
     add_value_to_current_container(kv);
 
@@ -532,8 +573,9 @@ void Physon::object_close(){
 
 };
 
-json_value Physon::parse_string_literal(){
+JsonWrapper Physon::parse_string_literal(){
 
+    // Skip quotation mark, but no gobbling in string literal
     cursor.index++;
 
     std::string new_string = "";
@@ -628,15 +670,15 @@ json_value Physon::parse_string_literal(){
     index_advance();
 
     // Add string to store
-    json_value new_value;
-    new_value.type = json_value_type::STRING;
+    JsonWrapper new_value;
+    new_value.type = JSON_TYPE::STRING;
     new_value.store_id = store.add_string(new_string);
 
 
     return new_value;
 };
 
-json_value Physon::parse_true_literal(){
+JsonWrapper Physon::parse_true_literal(){
 
     bool is_true_literal = (content[cursor.index + 1] == 'r' && content[cursor.index + 2] == 'u' && content[cursor.index + 3] == 'e');
     if(!is_true_literal)
@@ -647,14 +689,14 @@ json_value Physon::parse_true_literal(){
     tokens.emplace_back(token_type::TRUE, cursor.index, 4);
     cursor.index += 4;
 
-    json_value new_value;
-    new_value.type = json_value_type::TRUE;
+    JsonWrapper new_value;
+    new_value.type = JSON_TYPE::TRUE;
     new_value.store_id = 0;
 
     return new_value;
 };
 
-json_value Physon::parse_false_literal(){
+JsonWrapper Physon::parse_false_literal(){
 
     bool is_false_literal = (content[cursor.index + 1] == 'a' && content[cursor.index + 2] == 'l' && content[cursor.index + 3] == 's' && content[cursor.index + 4] == 'e');
     if(!is_false_literal)
@@ -665,13 +707,13 @@ json_value Physon::parse_false_literal(){
     tokens.emplace_back(token_type::FALSE, cursor.index, 5);
     cursor.index += 5;
 
-    json_value new_value;
-    new_value.type = json_value_type::FALSE;
+    JsonWrapper new_value;
+    new_value.type = JSON_TYPE::FALSE;
     new_value.store_id = 0;
     return new_value;
 };
 
-json_value Physon::parse_null_literal(){
+JsonWrapper Physon::parse_null_literal(){
 
     bool is_null_literal = (content[cursor.index + 1] == 'u' && content[cursor.index + 2] == 'l' && content[cursor.index + 3] == 'l');
     if(!is_null_literal)
@@ -682,8 +724,8 @@ json_value Physon::parse_null_literal(){
     tokens.emplace_back(token_type::NULL_, cursor.index, 4);
     cursor.index += 4;
 
-    json_value new_value;
-    new_value.type = json_value_type::NULL_;
+    JsonWrapper new_value;
+    new_value.type = JSON_TYPE::NULL_;
     new_value.store_id = 0;
     return new_value;
 };
@@ -726,6 +768,9 @@ bool Physon::is_new_value_char(){
     return is_new_literal_char() || is_new_container_char();
 }
 
+bool Physon::is_quotation_mark(){
+    return content[cursor.index] == '"' ? true : false;
+}
 bool Physon::is_new_literal_char(){
     char c = content[cursor.index];
     bool literal_name = c == 't' || c == 'f' || c == 'n';
@@ -742,31 +787,96 @@ void Physon::gobble_ws() {
 
 }
 
-void Physon::json_error(std::string error_msg){
-    state = JSON_PARSE_STATE::ERROR;
+std::string Physon::state_to_string(){
 
-    throw std::runtime_error(error_msg);
+    switch (state){
+
+    case JSON_PARSE_STATE::ARRAY_CLOSE :
+        return std::string("ARRAY_CLOSE");
+        break;
+    
+    case JSON_PARSE_STATE::ARRAY_ENTER :
+        return std::string("ARRAY_ENTER");
+        break;
+    case JSON_PARSE_STATE::ARRAY_ENTERED :
+        return std::string("ARRAY_ENTERED");
+        break;
+
+    case JSON_PARSE_STATE::DONE :
+        return std::string("DONE");
+        break;
+    case JSON_PARSE_STATE::ERROR :
+        return std::string("ERROR");
+        break;
+
+    case JSON_PARSE_STATE::ROOT_BEFORE_VALUE :
+        return std::string("ROOT_BEFORE_VALUE");
+        break;
+    case JSON_PARSE_STATE::ROOT_END_OF_VALUE :
+        return std::string("ROOT_END_OF_VALUE");
+        break;
+
+    case JSON_PARSE_STATE::OBJECT_ENTER :
+        return std::string("OBJECT_ENTER");
+        break;
+    case JSON_PARSE_STATE::OBJECT_PARSE_KEY_COMMA :
+        return std::string("OBJECT_PARSE_KEY_COMMA");
+        break;
+    case JSON_PARSE_STATE::OBJECT_CLOSE :
+        return std::string("OBJECT_CLOSE");
+        break;
+
+    case JSON_PARSE_STATE::VALUE_AT_NEW_VALUE_CHAR :
+        return std::string("VALUE_AT_NEW_VALUE_CHAR");
+        break;
+    case JSON_PARSE_STATE::VALUE_PARSE_LITERAL :
+        return std::string("VALUE_PARSE_LITERAL");
+        break;
+    case JSON_PARSE_STATE::VALUE_END_OF_VALUE :
+        return std::string("VALUE_END_OF_VALUE");
+        break;
+    
+
+    default:
+        return std::string("NO_STRING_REPRESENTATION_FOR_STATE");
+        break;
+    }
 
 }
 
-void Physon::add_value_to_current_container(json_value value){
+void Physon::json_error(std::string error_msg){
+
+
+    std::string state_string = " ... State: " + state_to_string() + ". ";
+
+    std::string index_msg = "Content index : " + std::to_string(cursor.index) + ", Char: '" + content.substr(cursor.index, 1) + "'.";
+
+    std::string full_error_msg = error_msg + state_string + index_msg;
+
+
+    state = JSON_PARSE_STATE::ERROR;
+    throw std::runtime_error(full_error_msg);
+
+}
+
+void Physon::add_value_to_current_container(JsonWrapper value){
 
     switch (current_container_type()){
 
-    case json_value_type::NONE: // Not in container ==> new value is root value
+    case JSON_TYPE::NONE: // Not in container ==> new value is root value
         root_value = value;
         break;
 
-    case json_value_type::ARRAY:
+    case JSON_TYPE::ARRAY:
         {
-            json_array& real_array = store.get_array(cursor.container_trace.top().store_id);
+            json_array_wrap& real_array = store.get_array(cursor.container_trace.top().store_id);
             real_array.push_back(value);
             
         }
         break;
-    case json_value_type::OBJECT:
+    case JSON_TYPE::OBJECT:
         {
-            json_object& real_object = store.get_object(cursor.container_trace.top().store_id);
+            json_object_wrap& real_object = store.get_object(cursor.container_trace.top().store_id);
             
             real_object.push_back(value);
 
@@ -775,9 +885,9 @@ void Physon::add_value_to_current_container(json_value value){
 
         }
         break;
-    case json_value_type::KV :
+    case JSON_TYPE::KV :
         {
-            json_kv& real_kv = store.get_kv(cursor.container_trace.top().store_id);
+            json_kv_wrap& real_kv = store.get_kv(cursor.container_trace.top().store_id);
             
             real_kv.second = value;
 

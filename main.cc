@@ -1,5 +1,6 @@
 #include <string>
 #include "physon.hh"
+#include "physon_types.hh"
 
 
 std::string load_file(std::string path) {
@@ -33,7 +34,8 @@ int main (int argc, char **argv) {
     // std::string json_string = load_file("data/name_literals_array.json");
     // std::string json_string = load_file("data/name_literals_nested_array.json");
     // std::string json_string = load_file("data/string_array.json");
-    std::string json_string = load_file("data/object.json");
+    // std::string json_string = load_file("data/object.json");
+    std::string json_string = load_file("data/object_nested.json");
     // std::string json_string = load_file("data/penpaper.json");
 
     // Non-valid
@@ -46,6 +48,7 @@ int main (int argc, char **argv) {
 
     physon.print_original();
     physon.print_tokens();
+    // print_type_sizes();
     
     // physon.build_string(physon.root_value);
 
