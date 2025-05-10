@@ -55,6 +55,7 @@ typedef long long int   json_int;
 // Wrapper containers
 typedef std::pair<json_string, JsonWrapper> json_kv_wrap;
 typedef std::vector<JsonWrapper>            json_array_wrap;
+/** Wraps only kv_wraps */
 typedef std::vector<JsonWrapper>            json_object_wrap;
 
 // Value containers

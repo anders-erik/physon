@@ -23,7 +23,7 @@ struct Physon {
 
     json_store store; // store for all json data
     
-    JsonWrapper root_value; // the first element encountered in file
+    JsonWrapper root_wrapper; // the first element encountered in file
 
     ParserCursor cursor;  // source string cursor
     std::vector<Token> tokens;
@@ -50,6 +50,18 @@ struct Physon {
     
 
     // QUERYING
+    json_float& unwrap_float(JsonWrapper float_wrapper){
+        return store.get_float(float_wrapper.store_id);
+    }
+    json_array_wrap& unwrap_array(JsonWrapper array_wrapper){
+        return store.get_array(array_wrapper.store_id);
+    }
+    json_object_wrap& unwrap_object(JsonWrapper object_wrapper){
+        return store.get_object(object_wrapper.store_id);
+    }
+    json_kv_wrap& unwrap_kv(JsonWrapper kv_wrapper){
+        return store.get_kv(kv_wrapper.store_id);
+    }
     JsonWrapper& find(std::string key);      // for json_object_wrap - not recursive
     json_object_wrap& get_object();              // for json_object_wrap
     json_array_wrap& get_array();                // for json_array
@@ -155,7 +167,7 @@ void Physon::print_original() {
 std::string Physon::stringify(){
     stringify_string = "";
 
-    build_string(root_value);
+    build_string(root_wrapper);
 
     return stringify_string;
 }
@@ -1221,7 +1233,7 @@ void Physon::add_value_to_current_container(JsonWrapper value){
     switch (current_container_type()){
 
     case JSON_TYPE::NONE: // Not in container ==> new value is root value
-        root_value = value;
+        root_wrapper = value;
         break;
 
     case JSON_TYPE::ARRAY:

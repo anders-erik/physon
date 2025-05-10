@@ -1,4 +1,7 @@
 #include <string>
+
+#include "examples/config_shape.hh"
+
 #include "physon.hh"
 #include "physon_types.hh"
 
@@ -38,7 +41,7 @@ int main (int argc, char **argv) {
     // std::string json_string = load_file("data/object_nested.json");
 
     // std::string json_string = load_file("data/integer.json");
-    std::string json_string = load_file("data/integers.json");
+    // std::string json_string = load_file("data/integers.json");
     // std::string json_string = load_file("data/numbers.json");
     // std::string json_string = load_file("data/numbers_2.json");
 
@@ -47,8 +50,11 @@ int main (int argc, char **argv) {
     // Non-valid
     // std::string json_string = load_file("data/unclosed_string.json");
 
+    // Shapes
+    std::string _json_string = load_file("data/shapes.json");
 
-    Physon physon (json_string);
+
+    Physon physon (_json_string);
 
     physon.parse();
 
@@ -56,10 +62,18 @@ int main (int argc, char **argv) {
     physon.print_tokens();
     // print_type_sizes();
     
-    // physon.build_string(physon.root_value);
+    // physon.build_string(physon.root_wrapper);
 
     std::cout << std::endl << physon.stringify() << std::endl;
     
+
+
+    // Shape config
+    ConfigShape shape_config {_json_string};
+    std::vector<Shape>& shapes = shape_config.load_shapes();
+    for(Shape shape : shapes){
+        shape.print();
+    }
 
     // bool space =  is_whitespace(' ');
     // bool tab =  is_whitespace('\t');
